@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es5",
     "module": "amd",
+    "moduleResolution": "node",
     "sourceMap": false,
     "outDir": "dist/ui/js",
     "lib": [

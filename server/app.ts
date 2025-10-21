@@ -7,6 +7,7 @@ import * as FS2 from "./fs"
 import * as PATH from "path"
 import {AssertionError} from "assert"
 import * as PICO_MATCH from "picomatch"
+import * as CHILD_PROCESS from "child_process"
 
 const CWD = PROCESS.cwd()
 console.log(`http://localhost:${SERVER.port}`)
@@ -19,7 +20,7 @@ interface Matcher {
 async function getFileList(path: string, ignore: Matcher[]): Promise<string[]> {
     let stat = UTIL.promisify(FS.stat)
     if (!(await stat(path)).isDirectory()) {
-        throw new AssertionError()
+        throw new AssertionError({message: 'Path is not a directory'})
     }
 
     let readdir = UTIL.promisify(FS.readdir)
@@ -74,6 +75,25 @@ async function getIgnore(path: string): Promise<Matcher[]> {
     }
 }
 
+async function generateNotesFromSource(sourcePath: string, notesPath: string): Promise<void> {
+    const exec = UTIL.promisify(CHILD_PROCESS.exec)
+    // __dirname is dist/server/server, so go up 3 levels to annotate root
+    const scriptPath = PATH.join(__dirname, '../../../generate_notes.py')
+
+    try {
+        const {stdout, stderr} = await exec(`python3 "${scriptPath}" "${sourcePath}" "${notesPath}"`)
+        if (stdout) {
+            console.log('Note generation:', stdout.trim())
+        }
+        if (stderr) {
+            console.error('Note generation warnings:', stderr.trim())
+        }
+    } catch (error) {
+        console.error('Failed to generate notes from docstrings:', error)
+        // Don't fail - just continue without auto-generated notes
+    }
+}
+
 async function getSources(): Promise<string> {
     let ignore = await getIgnore(PATH.join(CWD, '.annotateignore'))
     let files = await getFileList(CWD, ignore)
@@ -86,7 +106,13 @@ async function getSources(): Promise<string> {
 
     let sourceStr = JSON.stringify(source, null, 2)
     let writeFile = UTIL.promisify(FS.writeFile)
-    await writeFile(PATH.join(CWD, 'source.json'), sourceStr)
+    const sourcePath = PATH.join(CWD, 'source.json')
+    const notesPath = PATH.join(CWD, 'notes.json')
+    await writeFile(sourcePath, sourceStr)
+
+    // Auto-generate notes from docstrings
+    await generateNotesFromSource(sourcePath, notesPath)
+
     return sourceStr
 }
 
